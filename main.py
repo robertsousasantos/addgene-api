@@ -12,6 +12,7 @@ from datatypes import *
 from datatypes.expression import ExpressionIn
 from datatypes.popularity import PopularityIn
 from datatypes.services import ServicesIn
+from gemini_client import extract_search_params, design_plasmid
 from datatypes.plasmid_type import PlasmidTypeIn, PLASMID_TYPE_MAP_REVERSE
 from datatypes.services import SERVICES_MAP_REVERSE
 
@@ -225,6 +226,26 @@ async def search_plasmids(
     return scrape_plasmids(response.text)
   else:
     raise HTTPException(status_code=404, detail="Data not found.")
+
+
+class DesignRequest(BaseModel):
+  description: str
+  protein_sequence: str
+
+
+@app.post("/design")
+async def design_plasmid_endpoint(req: DesignRequest):
+  """Use Gemini to design a plasmid and search Addgene for a matching vector."""
+  params = extract_search_params(req.description)
+  response = await app.addgene_client.get(ADDGENE_PLASMID_CATALOG_PATH, params=params)
+  plasmids = scrape_plasmids(response.text) if response.status_code == 200 else []
+  plasmid = plasmids[0] if plasmids else None
+  design = design_plasmid(req.description, req.protein_sequence)
+  return {
+    "parameters": params,
+    "plasmid": plasmid,
+    "design": design,
+  }
 
 
 @retry(retry=retry_if_exception_type(httpx.ConnectTimeout), stop=stop_after_attempt(3))
